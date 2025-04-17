@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+*,
+*:before,
+*:after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+.prose ul li p,
+.prose ol li p {
+  margin: 0;
+  display: inline;
+}
+
+.prose ul li > *:first-child,
+.prose ol li > *:first-child {
+  margin-top: 0;
+}
+
+.prose ul li > *:last-child,
+.prose ol li > *:last-child {
+  margin-bottom: 0;
+}
+
+.prose table td > *:first-child,
+.prose table td > *:last-child {
+  margin: 0;
+}
