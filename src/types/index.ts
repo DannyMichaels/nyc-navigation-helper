@@ -11,7 +11,15 @@ export interface TransitOption {
   id: string;
   from: string;
   to: string;
-  type: 'subway' | 'bus' | 'walk' | 'taxi' | 'uber' | 'lirr' | 'metro-north';
+  type:
+    | 'subway'
+    | 'bus'
+    | 'walk'
+    | 'taxi'
+    | 'uber'
+    | 'lirr'
+    | 'metro-north'
+    | 'multimodal';
   name: string;
   description: string;
   duration: number;
@@ -24,6 +32,8 @@ export interface TransitOption {
     | 'Queens-bound'
     | 'Bronx-bound'
     | 'Manhattan-bound'
+    | 'Eastbound'
+    | 'Westbound'
     | string;
   trainSymbol?: string;
   trainColor?: string;
@@ -33,6 +43,9 @@ export interface TransitOption {
   cons?: string[];
   recommended?: boolean;
   color: string;
+  steps?: string[]; // Added steps to the type
+  realtimeStatus?: 'OnTime' | 'Delayed' | 'Cancelled';
+  estimatedArrival?: Date;
 }
 
 export interface CompassTemplate {

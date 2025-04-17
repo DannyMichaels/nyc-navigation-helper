@@ -27,10 +27,12 @@ const TransitInfo: React.FC = () => {
     setError(null);
 
     try {
+      // Pass current time from client
       const transitOptions = await getEnhancedTransitWithLlama(
         fromVenue,
         toVenue,
-        arrivalTime
+        arrivalTime,
+        new Date() // Current time from client
       );
       setTransitResults(transitOptions);
 

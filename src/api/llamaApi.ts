@@ -1,29 +1,13 @@
 import axios from 'axios';
 import { TransitOption, Venue } from '../types';
-import { formatTimeToTwelveHour } from '../lib/time';
+import {
+  formatTimeToTwelveHour,
+  convertToEst,
+  calculateOptimalDeparture,
+} from '../lib/time';
+import { MTARealtimeService } from '../services/MTARealtimeService';
 
 const API_URL = 'http://localhost:11434/api/chat';
-
-interface Message {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
-}
-
-interface LlamaRequest {
-  model: string;
-  messages: Message[];
-  stream?: boolean;
-}
-
-interface LlamaResponse {
-  model: string;
-  created_at: string;
-  message: {
-    role: string;
-    content: string;
-  };
-  done: boolean;
-}
 
 export const generateSvgWithLlama = async (
   venues: any[],
@@ -251,7 +235,7 @@ Respond with JSON only, no explanation.
 };
 
 // Fallback SVG generator in case Llama API fails
-const generateFallbackSvg = (venues: any[], center: any | null): string => {
+const generateFallbackSvg = (venues: Venue[], center: any | null): string => {
   const centerVenue = center || venues[0];
 
   let svg = `
@@ -307,59 +291,70 @@ const generateFallbackSvg = (venues: any[], center: any | null): string => {
 export const getEnhancedTransitWithLlama = async (
   fromVenue: Venue,
   toVenue: Venue,
-  arrivalTime?: string
+  arrivalTime?: string,
+  currentTime: Date = new Date()
 ): Promise<TransitOption[]> => {
   try {
-    // Create a detailed prompt that asks for multiple route options with specific train information
+    // Calculate optimal departure and max travel time
+    const { departureTime, maxTravelTime } = calculateOptimalDeparture(
+      currentTime,
+      arrivalTime
+    );
+
+    // Create a detailed prompt with specific routing requirements
     const prompt = `
-I need comprehensive transit options from "${fromVenue.name}" (${
-      fromVenue.address
-    }) to "${toVenue.name}" (${
+You are an expert NYC transit router. Provide comprehensive transit options from "${
+      fromVenue.name
+    }" (${fromVenue.address}) to "${toVenue.name}" (${
       toVenue.address
     }) in the New York City metropolitan area.
 
-INCLUDE ALL POSSIBLE TRANSIT OPTIONS:
-- Subway (local and express)
-- Long Island Rail Road (LIRR)
-- Metro-North
-- Commuter buses
-- Walking routes
-- Taxi/Uber
+CURRENT ROUTING CONTEXT:
+- Current Time: ${departureTime.toLocaleTimeString()}
+- Maximum Travel Time: ${maxTravelTime} minutes
+- Desired Arrival Time: ${arrivalTime || 'Not specified'}
 
-${arrivalTime ? `I need to arrive at ${toVenue.name} by ${arrivalTime}.` : ''}
+SPECIFIC ROUTING REQUIREMENTS:
+1. Provide MULTIPLE route options focusing on:
+   - Rockville Centre to Manhattan transit
+   - Direct LIRR routes
+   - LIRR + Subway combinations
+   - Subway routes via Jamaica Station
+   - Alternative transit methods
 
-Please provide 4-5 different route options, each as a separate JSON object in a JSON array. For each option, include:
-1. "type": Primary transportation type ("subway", "lirr", "metro-north", "bus", "walk", "taxi", "uber", etc.)
-2. "name": A short descriptive name for this option (e.g., "Express LIRR", "Subway Transfer Route")
-3. "line": Specific transit line (e.g., "LIRR Babylon Line", "A train", "Q25 bus")
-4. "direction": Travel direction (e.g., "Eastbound", "Westbound", "Northbound", "Southbound")
-5. "description": DETAILED step-by-step route description
-6. "duration": Total estimated travel time in minutes
-7. "cost": Estimated total cost in USD
-8. "pros": Specific advantages of this route
-9. "cons": Specific disadvantages of this route
-10. "recommended": Boolean indicating if this is the recommended option
-${
-  arrivalTime
-    ? '11. "departureTime": Departure time in 12-hour format\n12. "arrivalTime": Expected arrival time in 12-hour format'
-    : ''
+2. For EACH ROUTE, provide:
+   - Exact train lines
+   - Transfer points
+   - Estimated travel time
+   - Cost
+   - Pros and cons
+
+3. Prioritize routes that:
+   - Arrive before desired time
+   - Minimize total travel time
+   - Consider rush hour dynamics
+   - Provide best transfer efficiency
+
+DETAILED ROUTE INFORMATION FORMAT:
+{
+  "type": "lirr" | "subway" | "multimodal",
+  "name": "Route Description",
+  "line": "Specific Train Lines",
+  "direction": "Travel Direction",
+  "description": "Detailed Step-by-Step Route",
+  "duration": Minutes,
+  "cost": Total Cost in USD,
+  "pros": ["Advantage 1", "Advantage 2"],
+  "cons": ["Disadvantage 1", "Disadvantage 2"]
 }
 
-SPECIFIC GUIDELINES:
-- Prioritize FASTEST and MOST DIRECT routes
-- Consider LIRR and commuter rail options
-- Provide EXACT transfer instructions
-- Include specific station names and exits
-- Mention any walking distances
-- Calculate travel times including transfers
-- Consider rush hour and off-peak timing
+FOCUS AREAS:
+- Direct LIRR Babylon Line options
+- Subway transfers at key stations
+- Minimal walking
+- Consider time of day (rush hour)
 
-IMPORTANT: 
-- Always format times in 12-hour AM/PM format
-- Be VERY SPECIFIC about route details
-- Consider all possible transit combinations
-
-Respond with ONLY a valid JSON array of these objects, no explanation.
+Respond with ONLY a valid JSON array of transit options.
 `;
 
     const response = await axios.post(API_URL, {
@@ -367,14 +362,11 @@ Respond with ONLY a valid JSON array of these objects, no explanation.
       messages: [
         {
           role: 'system',
-          content: `You are an expert NYC transit router who knows:
-- Every subway line and its characteristics
-- Complete LIRR and commuter rail network
-- Precise transfer points and walking routes
-- Exact travel times and costs
-- Rush hour and off-peak transit dynamics
-
-You provide hyper-detailed, accurate transit routing that considers ALL possible options, prioritizing speed, convenience, and clarity.`,
+          content: `You are a hyper-detailed NYC transit routing AI for Long Island to Manhattan routes. 
+- Expert in Rockville Centre to Manhattan transit
+- Precise about train lines, transfer points
+- Considers real-time transit constraints
+- Prioritizes efficiency and passenger convenience`,
         },
         {
           role: 'user',
@@ -392,121 +384,221 @@ You provide hyper-detailed, accurate transit routing that considers ALL possible
       throw new Error('No valid JSON array found in response');
     }
 
+    // Initialize MTA Realtime Service
+    const mtaService = new MTARealtimeService('');
+
     // Parse the JSON array
     try {
       const transitOptions = JSON.parse(jsonMatch[0]);
 
       // Process each option to enhance display and ensure types are correct
-      return transitOptions.map((option: Partial<TransitOption>) => {
-        // Handle transit type-specific icon and color
-        switch (option.type) {
-          case 'subway':
-            if (option.line) {
-              const lineSymbol = option.line.split(',')[0].trim();
-              option.trainSymbol = lineSymbol;
-              option.trainColor = getSubwayLineColor(lineSymbol);
-              option.color = option.trainColor;
+      const processedOptions = await Promise.all(
+        transitOptions.map(
+          async (option: Partial<TransitOption>, index: number) => {
+            // Enhance route options with additional details
+            switch (option.type) {
+              case 'lirr':
+                option.trainSymbol = 'L';
+                option.trainColor = '#808183'; // Silver/Gray for LIRR
+                option.color = '#808183';
+                option.recommended = index === 0;
+
+                // Fetch LIRR real-time status
+                try {
+                  const lirrStatuses = await mtaService.getRealtimeStatus(
+                    'LIRR'
+                  );
+                  if (lirrStatuses.length > 0) {
+                    const status = lirrStatuses[0];
+                    option.realtimeStatus = status.status;
+                    option.estimatedArrival = status.estimatedArrival;
+                  }
+                } catch (error) {
+                  console.error('Error fetching LIRR realtime data:', error);
+                }
+                break;
+
+              case 'subway':
+                if (option.line) {
+                  const lineSymbol = option.line.split(',')[0].trim();
+                  option.trainSymbol = lineSymbol;
+                  option.trainColor = getSubwayLineColor(lineSymbol);
+                  option.color = option.trainColor;
+
+                  // Fetch real-time status for subway lines
+                  try {
+                    const realtimeStatuses = await mtaService.getRealtimeStatus(
+                      lineSymbol
+                    );
+                    if (realtimeStatuses.length > 0) {
+                      const status = realtimeStatuses[0];
+                      option.realtimeStatus = status.status;
+                      option.estimatedArrival = status.estimatedArrival;
+                    }
+                  } catch (error) {
+                    console.error(
+                      `Error fetching realtime data for ${lineSymbol}:`,
+                      error
+                    );
+                  }
+                }
+                break;
+
+              case 'multimodal':
+                option.trainSymbol = 'M';
+                option.trainColor = '#4285F4';
+                option.color = '#4285F4';
+                break;
+
+              case 'bus':
+                option.trainSymbol = 'B';
+                option.trainColor = '#FF6D00';
+                option.color = '#FF6D00';
+                break;
             }
-            break;
-          case 'lirr':
-            option.trainSymbol = 'L';
-            option.trainColor = '#808183'; // Silver/Gray for LIRR
-            option.color = '#808183';
-            break;
-          case 'metro-north':
-            option.trainSymbol = 'M';
-            option.trainColor = '#00A86B'; // Metro-North Green
-            option.color = '#00A86B';
-            break;
-          case 'bus':
-            option.trainSymbol = 'B';
-            option.trainColor = '#FF6D00';
-            option.color = '#FF6D00';
-            break;
-          case 'walk':
-            option.trainSymbol = 'W';
-            option.trainColor = '#4285F4';
-            option.color = '#4285F4';
-            break;
-        }
 
-        // Format time if not already in 12-hour format
-        if (
-          option.departureTime &&
-          !option.departureTime.includes('AM') &&
-          !option.departureTime.includes('PM')
-        ) {
-          option.departureTime = formatTimeToTwelveHour(option.departureTime);
-        }
+            // Format times
+            const formatTime = (time: string | Date) => {
+              const timeObj =
+                typeof time === 'string'
+                  ? new Date(`1970-01-01T${time}`)
+                  : time;
+              return formatTimeToTwelveHour(
+                timeObj.toLocaleTimeString('en-US', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  hour12: true,
+                })
+              );
+            };
 
-        if (
-          option.arrivalTime &&
-          !option.arrivalTime.includes('AM') &&
-          !option.arrivalTime.includes('PM')
-        ) {
-          option.arrivalTime = formatTimeToTwelveHour(option.arrivalTime);
-        }
+            // Set departure and arrival times
+            option.departureTime = formatTime(departureTime);
+            if (option.duration) {
+              const arrivalTime = new Date(departureTime);
+              arrivalTime.setMinutes(
+                arrivalTime.getMinutes() + option.duration
+              );
+              option.arrivalTime = formatTime(arrivalTime);
+            }
 
-        // Ensure the option has an ID
-        if (!option.id) {
-          option.id = `transit-${Date.now()}-${Math.floor(
-            Math.random() * 1000
-          )}`;
-        }
+            // Add unique ID and venue references
+            option.id = `transit-${Date.now()}-${index}`;
+            option.from = fromVenue.id;
+            option.to = toVenue.id;
 
-        // Set from and to fields if they're not already set
-        if (!option.from) option.from = fromVenue.id;
-        if (!option.to) option.to = toVenue.id;
+            // Ensure steps are added
+            if (!option.steps) {
+              option.steps = [
+                'Detailed route steps not provided',
+                'Please refer to the description for route information',
+              ];
+            }
 
-        return option as TransitOption;
-      });
+            return option as TransitOption;
+          }
+        )
+      );
+
+      return processedOptions;
     } catch (err) {
       console.error('Error parsing JSON:', err);
       throw new Error('Failed to parse transit options JSON');
     }
   } catch (error) {
     console.error('Error getting enhanced transit options:', error);
-    // Return a default set of options with more specific train information
+
+    // Fallback detailed routes using current time context
+    const { departureTime, maxTravelTime } = calculateOptimalDeparture(
+      currentTime,
+      arrivalTime
+    );
+
+    // Fetch real-time LIRR status as an example
+    let lirrStatus: RealtimeTransitStatus[] = [];
+    try {
+      const mtaService = new MTARealtimeService('');
+      lirrStatus = await mtaService.getRealtimeStatus('LIRR');
+    } catch (statusError) {
+      console.error('Error fetching LIRR status:', statusError);
+    }
+
     return [
       {
         id: `transit-${Date.now()}-1`,
         type: 'lirr',
         name: 'Direct LIRR Express',
         line: 'LIRR Babylon Line',
-        direction: 'Westbound',
+        direction: 'Eastbound',
         trainSymbol: 'L',
         trainColor: '#808183',
-        description: `Take the LIRR Babylon Line from Rockville Centre directly to Penn Station. This is the fastest and most direct route.`,
-        duration: 25,
-        cost: 12.5,
+        description: `Take the LIRR Babylon Line from Rockville Centre Station directly to Penn Station. From Penn Station, take the subway to Bowery.`,
+        duration: 45,
+        cost: 15.5,
         from: fromVenue.id,
         to: toVenue.id,
-        pros: ['Fastest route', 'Direct connection', 'Comfortable train'],
-        cons: ['More expensive than subway'],
+        pros: [
+          'Direct LIRR route',
+          'Minimal transfers',
+          'Comfortable train service',
+        ],
+        cons: [
+          'More expensive than subway',
+          'Requires additional subway transfer',
+        ],
         recommended: true,
-        departureTime: '4:35 PM',
-        arrivalTime: '5:00 PM',
+        departureTime: formatTimeToTwelveHour(
+          departureTime.toLocaleTimeString()
+        ),
+        arrivalTime: formatTimeToTwelveHour(
+          new Date(departureTime.getTime() + 45 * 60000).toLocaleTimeString()
+        ),
         color: '#808183',
+        steps: [
+          'Walk to Rockville Centre LIRR Station',
+          'Take LIRR Babylon Line to Penn Station',
+          'Transfer to subway at Penn Station',
+          'Take subway to Bowery Station',
+          'Short walk to final destination',
+        ],
+        realtimeStatus:
+          lirrStatus.length > 0 ? lirrStatus[0].status : undefined,
+        estimatedArrival:
+          lirrStatus.length > 0 ? lirrStatus[0].estimatedArrival : undefined,
       },
       {
         id: `transit-${Date.now()}-2`,
-        type: 'subway',
-        name: 'Express Subway Route',
-        line: 'A',
-        direction: 'Uptown',
-        trainSymbol: 'A',
-        trainColor: '#0039A6',
-        description: `Take the Downtown A express train with the blue circle symbol from Rockville Centre to Jay Street - MetroTech in Brooklyn. Transfer to the A, C, or E at 34th Street - Herald Square.`,
-        duration: 45,
-        cost: 2.75,
+        type: 'multimodal',
+        name: 'Subway + Bus Combination',
+        line: 'A,1,M15',
+        direction: 'Downtown',
+        trainSymbol: 'M',
+        trainColor: '#4285F4',
+        description: `Combination of subway and bus routes with minimal walking.`,
+        duration: 55,
+        cost: 8.75,
         from: fromVenue.id,
         to: toVenue.id,
-        pros: ['Cheaper than LIRR', 'Multiple train options'],
-        cons: ['Longer travel time', 'Multiple transfers'],
+        pros: ['Lower cost', 'Multiple route options', 'Flexible transfers'],
+        cons: [
+          'Longer travel time',
+          'More complicated route',
+          'Potential crowded transfers',
+        ],
         recommended: false,
-        departureTime: '4:30 PM',
-        arrivalTime: '5:15 PM',
-        color: '#0039A6',
+        departureTime: formatTimeToTwelveHour(
+          departureTime.toLocaleTimeString()
+        ),
+        arrivalTime: formatTimeToTwelveHour(
+          new Date(departureTime.getTime() + 55 * 60000).toLocaleTimeString()
+        ),
+        color: '#4285F4',
+        steps: [
+          'Take subway from Rockville Centre to Jamaica Station',
+          'Transfer to E train to Manhattan',
+          'Transfer to downtown 6 train',
+          'Take M15 bus to final destination',
+        ],
       },
     ];
   }
@@ -514,7 +606,6 @@ You provide hyper-detailed, accurate transit routing that considers ALL possible
 
 // Helper function for determining subway line colors
 export const getSubwayLineColor = (lineSymbol: string) => {
-  // NYC subway line colors
   const subwayColors: Record<string, string> = {
     A: '#0039A6',
     C: '#0039A6',
@@ -541,5 +632,5 @@ export const getSubwayLineColor = (lineSymbol: string) => {
     S: '#808183',
   };
 
-  return subwayColors[lineSymbol] || '#333333';
+  return subwayColors[lineSymbol?.trim?.()] || '#333333';
 };

@@ -1,4 +1,5 @@
 import React from 'react';
+import { getSubwayLineColor } from '../api/llamaApi';
 
 // Helper component for rendering subway train symbols with correct MTA styling
 const SubwayBullet: React.FC<{ line: string; color?: string }> = ({
@@ -6,36 +7,8 @@ const SubwayBullet: React.FC<{ line: string; color?: string }> = ({
   color,
 }) => {
   // Default subway line colors if not provided
-  const getDefaultColor = (line: string) => {
-    const subwayColors: Record<string, string> = {
-      A: '#0039A6',
-      C: '#0039A6',
-      E: '#0039A6',
-      B: '#FF6319',
-      D: '#FF6319',
-      F: '#FF6319',
-      M: '#FF6319',
-      N: '#FCCC0A',
-      Q: '#FCCC0A',
-      R: '#FCCC0A',
-      W: '#FCCC0A',
-      '1': '#EE352E',
-      '2': '#EE352E',
-      '3': '#EE352E',
-      '4': '#00933C',
-      '5': '#00933C',
-      '6': '#00933C',
-      L: '#A7A9AC',
-      '7': '#B933AD',
-      G: '#6CBE45',
-      J: '#996633',
-      Z: '#996633',
-      S: '#808183',
-    };
-    return subwayColors[line] || '#333333';
-  };
 
-  const bgColor = color || getDefaultColor(line);
+  const bgColor = color || getSubwayLineColor(line);
   // Use white text for darker background colors, black for lighter ones
   const textColor = ['#FCCC0A'].includes(bgColor) ? '#000000' : '#FFFFFF';
 

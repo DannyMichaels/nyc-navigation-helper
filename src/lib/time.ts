@@ -35,3 +35,56 @@ export const formatTimeToTwelveHour = (time: string): string => {
   // Format the time properly
   return `${hours}:${minutes.toString().padStart(2, '0')} ${period}`;
 };
+
+export const convertToEST = (date: Date): Date => {
+  // Create a new date object in EST
+  const estDate = new Date(
+    date.toLocaleString('en-US', { timeZone: 'America/New_York' })
+  );
+  return estDate;
+};
+
+export const calculateOptimalDeparture = (
+  currentTime: Date,
+  desiredArrivalTime?: string
+): { departureTime: Date; maxTravelTime: number } => {
+  // Convert current time to EST
+  const estCurrentTime = convertToEST(currentTime);
+
+  // If no arrival time specified, default to a standard commute time
+  if (!desiredArrivalTime) {
+    // Default to a 45-minute travel time
+    const defaultDeparture = new Date(estCurrentTime);
+    defaultDeparture.setMinutes(defaultDeparture.getMinutes() + 45);
+    return {
+      departureTime: defaultDeparture,
+      maxTravelTime: 45,
+    };
+  }
+
+  // Parse desired arrival time
+  const [hours, minutes] = desiredArrivalTime.split(':').map(Number);
+  const desiredArrival = new Date(estCurrentTime);
+  desiredArrival.setHours(hours, minutes, 0, 0);
+
+  // If desired arrival is earlier today, use it; otherwise, use tomorrow
+  if (desiredArrival <= estCurrentTime) {
+    desiredArrival.setDate(desiredArrival.getDate() + 1);
+  }
+
+  // Calculate maximum travel time
+  const timeDiff =
+    (desiredArrival.getTime() - estCurrentTime.getTime()) / (1000 * 60);
+
+  // Subtract some buffer time for transfers and walking
+  const maxTravelTime = Math.max(15, Math.floor(timeDiff - 15));
+
+  // Calculate latest possible departure
+  const departureTime = new Date(desiredArrival);
+  departureTime.setMinutes(departureTime.getMinutes() - maxTravelTime);
+
+  return {
+    departureTime,
+    maxTravelTime,
+  };
+};

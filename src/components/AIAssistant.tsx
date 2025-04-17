@@ -1,6 +1,3 @@
-// Updated AIAssistant.tsx with export features while preserving your improvements
-// pnpm add html-to-image
-
 import React, { useState, useRef } from 'react';
 import axios from 'axios';
 import { useVenueStore } from '../store/useVenueStore';
