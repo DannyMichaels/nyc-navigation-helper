@@ -415,6 +415,18 @@ const getColorForOption = (option: TransitOption): string => {
 };
 
 const getIconForOption = (option: TransitOption): string => {
+  // Specific handling for place names that might accidentally trigger 'S'
+  if (
+    option.name &&
+    (option.name.toLowerCase().includes('station') ||
+      option.name.toLowerCase().includes('terminal'))
+  ) {
+    // Use a more generic icon or the first letter of a relevant word
+    if (option.type === 'subway')
+      return option.line?.split(',')[0].trim() || 'T';
+    return 'T'; // Terminal/Transport icon
+  }
+
   if (option.type === 'subway') {
     return option.line?.split(',')[0].trim() || 'S';
   } else if (option.type === 'bus') {

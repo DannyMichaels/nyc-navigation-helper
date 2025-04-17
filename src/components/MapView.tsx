@@ -13,6 +13,53 @@ import { getTransitSuggestionWithLlama } from '../api/llamaApi';
 // Import Leaflet CSS
 import 'leaflet/dist/leaflet.css';
 
+// Legend Component
+const MapLegend: React.FC<{ venues: any[] }> = ({ venues }) => {
+  // Get unique venue types from venues
+  const venueTypes = [...new Set(venues.map((venue) => venue.type))];
+
+  return (
+    <div className="leaflet-bottom leaflet-right">
+      <div className="leaflet-control leaflet-bar bg-white p-4 rounded-lg shadow-lg">
+        <h3 className="font-bold mb-2">Venue Types</h3>
+        <div className="space-y-2">
+          {venueTypes.map((type) => {
+            const venue = venues.find((v) => v.type === type);
+            return venue ? (
+              <div key={type} className="flex items-center">
+                <div
+                  className="w-6 h-6 rounded-full mr-2 flex items-center justify-center"
+                  style={{
+                    backgroundColor: venue.color,
+                    color: 'white',
+                    fontWeight: 'bold',
+                  }}
+                >
+                  {venue.shortName}
+                </div>
+                <span className="capitalize">{type}</span>
+              </div>
+            ) : null;
+          })}
+        </div>
+        <div className="mt-2 border-t pt-2">
+          <h4 className="font-semibold text-sm mb-1">Routes</h4>
+          <div className="space-y-1">
+            <div className="flex items-center">
+              <div className="w-6 h-1 bg-blue-500 mr-2"></div>
+              <span className="text-xs">Transit Route</span>
+            </div>
+            <div className="flex items-center">
+              <div className="w-6 h-1 bg-blue-500 mr-2 border-dashed border-blue-500 border-2"></div>
+              <span className="text-xs">Walking Route</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const MapView: React.FC = () => {
   const { venues, transitOptions, centerVenue, addTransitOption } =
     useVenueStore();
@@ -76,7 +123,7 @@ const MapView: React.FC = () => {
 
   return (
     <div className="bg-white rounded-lg shadow-lg p-4">
-      <div className="h-96 rounded-md overflow-hidden">
+      <div className="h-96 rounded-md overflow-hidden relative">
         <MapContainer
           center={centerVenueObj.coordinates}
           zoom={13}
@@ -135,6 +182,8 @@ const MapView: React.FC = () => {
               />
             );
           })}
+
+          {/* <MapLegend venues={venues} /> */}
         </MapContainer>
       </div>
 
