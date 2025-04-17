@@ -1,5 +1,6 @@
 import axios from 'axios';
-import { Venue } from '../types';
+import { TransitOption, Venue } from '../types';
+import { formatTimeToTwelveHour } from '../lib/time';
 
 const API_URL = 'http://localhost:11434/api/chat';
 
@@ -313,35 +314,50 @@ export const getEnhancedTransitWithLlama = async (
     const prompt = `
 I need comprehensive transit options from "${fromVenue.name}" (${
       fromVenue.address
-    }) to "${toVenue.name}" (${toVenue.address}) in New York City.
+    }) to "${toVenue.name}" (${
+      toVenue.address
+    }) in the New York City metropolitan area.
+
+INCLUDE ALL POSSIBLE TRANSIT OPTIONS:
+- Subway (local and express)
+- Long Island Rail Road (LIRR)
+- Metro-North
+- Commuter buses
+- Walking routes
+- Taxi/Uber
 
 ${arrivalTime ? `I need to arrive at ${toVenue.name} by ${arrivalTime}.` : ''}
 
-Please provide 3-4 different route options, each as a separate JSON object in a JSON array. For each option, include:
-1. "type": Primary transportation type ("subway", "bus", "walk", "taxi", "uber", etc.)
-2. "name": A short descriptive name for this option (e.g., "Express Subway", "Scenic Walk")
-3. "line": For subway, specify EXACTLY which train to take (e.g., "A" not "A, C, E")
-4. "direction": For subway/bus, specify direction (e.g., "Downtown", "Uptown", "Brooklyn-bound")
-5. "description": A detailed description with SPECIFIC trains to take. Do NOT list multiple trains like "A, C, E" - specify EXACTLY which one to take (e.g., "Take the Downtown A express train")
-6. "duration": Estimated travel time in minutes
-7. "cost": Estimated cost in USD (if applicable)
-8. "pros": Array of advantages for this option
-9. "cons": Array of disadvantages for this option
+Please provide 4-5 different route options, each as a separate JSON object in a JSON array. For each option, include:
+1. "type": Primary transportation type ("subway", "lirr", "metro-north", "bus", "walk", "taxi", "uber", etc.)
+2. "name": A short descriptive name for this option (e.g., "Express LIRR", "Subway Transfer Route")
+3. "line": Specific transit line (e.g., "LIRR Babylon Line", "A train", "Q25 bus")
+4. "direction": Travel direction (e.g., "Eastbound", "Westbound", "Northbound", "Southbound")
+5. "description": DETAILED step-by-step route description
+6. "duration": Total estimated travel time in minutes
+7. "cost": Estimated total cost in USD
+8. "pros": Specific advantages of this route
+9. "cons": Specific disadvantages of this route
 10. "recommended": Boolean indicating if this is the recommended option
 ${
   arrivalTime
-    ? '11. "departureTime": Departure time in 12-hour format (e.g., "5:30 PM")\n12. "arrivalTime": Expected arrival time in 12-hour format (e.g., "6:15 PM")'
+    ? '11. "departureTime": Departure time in 12-hour format\n12. "arrivalTime": Expected arrival time in 12-hour format'
     : ''
 }
 
-For subway options:
-- Clearly distinguish between local and express trains
-- Include train color and symbol information (e.g., "Blue A circle", "Red 1 circle")
-- Specify which specific entrance to use at stations when relevant
-- Include which specific exit to use when arriving at a station
-- If a transfer is needed, provide detailed instructions for the transfer
+SPECIFIC GUIDELINES:
+- Prioritize FASTEST and MOST DIRECT routes
+- Consider LIRR and commuter rail options
+- Provide EXACT transfer instructions
+- Include specific station names and exits
+- Mention any walking distances
+- Calculate travel times including transfers
+- Consider rush hour and off-peak timing
 
-IMPORTANT: Always format times in 12-hour AM/PM format (e.g., "5:30 PM", "8:45 AM"), never in 24-hour format.
+IMPORTANT: 
+- Always format times in 12-hour AM/PM format
+- Be VERY SPECIFIC about route details
+- Consider all possible transit combinations
 
 Respond with ONLY a valid JSON array of these objects, no explanation.
 `;
@@ -351,8 +367,14 @@ Respond with ONLY a valid JSON array of these objects, no explanation.
       messages: [
         {
           role: 'system',
-          content:
-            "You are a specialized AI that provides detailed NYC transit information with multiple routing options. You know the NYC subway system extremely well, including which trains are express vs local, the exact train colors and symbols, and typical transit times. You always specify EXACTLY which train to take (e.g., 'Take the Downtown A express train with the blue circle symbol' not just 'Take the A, C, E'). You always format times in 12-hour AM/PM format, never in 24-hour format. You provide specific, accurate information that would help even a tourist navigate NYC efficiently.",
+          content: `You are an expert NYC transit router who knows:
+- Every subway line and its characteristics
+- Complete LIRR and commuter rail network
+- Precise transfer points and walking routes
+- Exact travel times and costs
+- Rush hour and off-peak transit dynamics
+
+You provide hyper-detailed, accurate transit routing that considers ALL possible options, prioritizing speed, convenience, and clarity.`,
         },
         {
           role: 'user',
@@ -376,18 +398,36 @@ Respond with ONLY a valid JSON array of these objects, no explanation.
 
       // Process each option to enhance display and ensure types are correct
       return transitOptions.map((option: Partial<TransitOption>) => {
-        // Extract exact train information if available
-        if (
-          option.type === 'subway' &&
-          option.line &&
-          !option.trainSymbol &&
-          typeof option.line === 'string'
-        ) {
-          // Extract first letter/number for the icon
-          option.trainSymbol = option.line.split(',')[0].trim();
-
-          // Add color information based on NYC subway system
-          option.trainColor = getSubwayLineColor(option.trainSymbol);
+        // Handle transit type-specific icon and color
+        switch (option.type) {
+          case 'subway':
+            if (option.line) {
+              const lineSymbol = option.line.split(',')[0].trim();
+              option.trainSymbol = lineSymbol;
+              option.trainColor = getSubwayLineColor(lineSymbol);
+              option.color = option.trainColor;
+            }
+            break;
+          case 'lirr':
+            option.trainSymbol = 'L';
+            option.trainColor = '#808183'; // Silver/Gray for LIRR
+            option.color = '#808183';
+            break;
+          case 'metro-north':
+            option.trainSymbol = 'M';
+            option.trainColor = '#00A86B'; // Metro-North Green
+            option.color = '#00A86B';
+            break;
+          case 'bus':
+            option.trainSymbol = 'B';
+            option.trainColor = '#FF6D00';
+            option.color = '#FF6D00';
+            break;
+          case 'walk':
+            option.trainSymbol = 'W';
+            option.trainColor = '#4285F4';
+            option.color = '#4285F4';
+            break;
         }
 
         // Format time if not already in 12-hour format
@@ -430,38 +470,43 @@ Respond with ONLY a valid JSON array of these objects, no explanation.
     return [
       {
         id: `transit-${Date.now()}-1`,
-        type: 'subway',
-        name: 'Express Subway',
-        line: '1',
-        direction: 'Downtown',
-        trainSymbol: '1',
-        trainColor: '#EE352E',
-        description: `Take the Downtown 1 local train (red circle) from Penn Station to Chambers St. Exit at the north end of the station and walk east on Chambers St to ${toVenue.name}.`,
-        duration: 20,
-        cost: 2.75,
+        type: 'lirr',
+        name: 'Direct LIRR Express',
+        line: 'LIRR Babylon Line',
+        direction: 'Westbound',
+        trainSymbol: 'L',
+        trainColor: '#808183',
+        description: `Take the LIRR Babylon Line from Rockville Centre directly to Penn Station. This is the fastest and most direct route.`,
+        duration: 25,
+        cost: 12.5,
         from: fromVenue.id,
         to: toVenue.id,
-        pros: ['Fast', 'Reliable service', 'Frequent trains'],
-        cons: ['Can be crowded during rush hour'],
+        pros: ['Fastest route', 'Direct connection', 'Comfortable train'],
+        cons: ['More expensive than subway'],
         recommended: true,
-        departureTime: '5:30 PM',
-        arrivalTime: '5:50 PM',
-        color: '#EE352E',
+        departureTime: '4:35 PM',
+        arrivalTime: '5:00 PM',
+        color: '#808183',
       },
       {
         id: `transit-${Date.now()}-2`,
-        type: 'walk',
-        name: 'Scenic Walking Route',
-        description: `Walk east from ${fromVenue.name} via 34th Street, then south on 5th Avenue all the way to ${toVenue.name}.`,
-        duration: 40,
+        type: 'subway',
+        name: 'Express Subway Route',
+        line: 'A',
+        direction: 'Uptown',
+        trainSymbol: 'A',
+        trainColor: '#0039A6',
+        description: `Take the Downtown A express train with the blue circle symbol from Rockville Centre to Jay Street - MetroTech in Brooklyn. Transfer to the A, C, or E at 34th Street - Herald Square.`,
+        duration: 45,
+        cost: 2.75,
         from: fromVenue.id,
         to: toVenue.id,
-        pros: ['Exercise', 'No cost', 'See city landmarks'],
-        cons: ['Weather dependent', 'Longer travel time'],
+        pros: ['Cheaper than LIRR', 'Multiple train options'],
+        cons: ['Longer travel time', 'Multiple transfers'],
         recommended: false,
-        departureTime: '5:00 PM',
-        arrivalTime: '5:40 PM',
-        color: '#4285F4',
+        departureTime: '4:30 PM',
+        arrivalTime: '5:15 PM',
+        color: '#0039A6',
       },
     ];
   }

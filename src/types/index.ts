@@ -11,7 +11,7 @@ export interface TransitOption {
   id: string;
   from: string;
   to: string;
-  type: 'subway' | 'bus' | 'walk' | 'taxi' | 'uber';
+  type: 'subway' | 'bus' | 'walk' | 'taxi' | 'uber' | 'lirr' | 'metro-north';
   name: string;
   description: string;
   duration: number;
